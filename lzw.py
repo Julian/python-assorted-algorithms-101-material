@@ -1,5 +1,9 @@
-import struct
+import argparse
+import json
+import os
+import sys
 
+import struct
 from itertools import count
 
 def compress(string):
@@ -29,32 +33,51 @@ def decompress(compressed_file, keycodes):
             return "".join(output)
         output.append(keycodes[struct.unpack("<I", next_key)[0]])
 
+def parse_for_compress(args):
+    compressed = compress(args.infile.read())
+    for i in compressed:
+        try:
+            args.outfile.write(struct.pack("<I", i))
+        except struct.error:
+            args.keycode_file.write(json.dumps(i, sort_keys=True,
+                                                  indent=4))
+
+def parse_for_decompress(args):
+    keycodes = json.load(args.keycode_file)
+    args.outfile.write(decompress(args.infile, keycodes))
+
+def main():
+    description = ("Output an LZW compressed binary file and JSON dict"
+                   "containing the keycodes for decompression, or decompress a"
+                   "previously LZW compressed file.")
+    parser = argparse.ArgumentParser(description=description)
+    subparsers = parser.add_subparsers()
+    parser_comp = subparsers.add_parser("compress")
+    parser_comp.add_argument("--infile", nargs="?",
+                             type=argparse.FileType("r"), default=sys.stdin)
+    parser_comp.add_argument("--outfile", nargs="?",
+                             type=argparse.FileType("wb"),
+                             default=os.path.join(os.getcwd(), "output.bin"))
+    parser_comp.add_argument("--keycode-file", nargs="?",
+                             type=argparse.FileType("w"),
+                             default=os.path.join(os.getcwd(), "keycodes.json"))
+    parser_comp.set_defaults(func=parse_for_compress)
+    parser_decomp = subparsers.add_parser("decompress")
+    parser_decomp.add_argument("--infile", nargs="?",
+                               type=argparse.FileType("rb"),
+                               default=os.path.join(os.getcwd(), "output.bin"))
+    parser_decomp.add_argument("--keycode-file", nargs="?",
+                               type=argparse.FileType("r"),
+                             default=os.path.join(os.getcwd(), "keycodes.json"))
+    parser_decomp.add_argument("--outfile", nargs="?",
+                               type=argparse.FileType("w"), default=sys.stdout)
+    parser_decomp.set_defaults(func=parse_for_decompress)
+
+    args = parser.parse_args()
+    args.func(args)
+    args.infile.close()
+    args.outfile.close()
+    args.keycode_file.close()
+
 if __name__ == "__main__":
-    import os
-    import json
-
-    output, keycodes = "output.bin", "keycodes.json"
-    print ("Outputting the compressed data to \n\t{0}\nand the corresponding "
-           "keycodes to \n\t{1}".format(os.path.join(os.getcwd(), output),
-                                        os.path.join(os.getcwd(), keycodes)))
-
-    with open(output, "wb") as op, open(keycodes, "w") as json_op:
-        compressed = compress("aaaavvabbabasdfbwbabababadfnbbbasdfwbbbbasdfawn"
-                              "ekrjnzxcvzxcvzbxcvbababdfbbbbabaaaabbababababa")
-        # or try: compress(open("/path/to/huckleberry/finn/.txt/").read())
-        for i in compressed:
-            try:
-                op.write(struct.pack("<I", i))
-            except struct.error:
-                json_op.write(json.dumps(i, sort_keys=True, indent=4))
-
-"""
-To decode:
-    output = open("output.bin")
-    json_keycodes = open("keycodes.json")
-
-    import json
-    keycodes = json.load(json_keycodes)
-
-    decompress(output, keycodes)
-"""
+    main()
